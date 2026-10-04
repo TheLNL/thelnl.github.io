@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name"viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<title>Time Picker</title>
+</head>
+<body>
+
+  <h1 id="display" style="font-family: monospace; text-align: center; margin-top: 20px;">[  :   ]</h1>
+
+  <svg id="clock" viewBox="-120 -120 240 240" width="360" height="360" style="display: block; margin: 0 auto; user-select: none; touch-action: none;">
+    <!-- Main Outer Boundary Circle (Radius = 85) -->
+    <circle r="85" fill="none" stroke="#000" stroke-width="2"/>
+
+    <!-- Center AM/PM Outlines -->
+    <path d="M 0 -35 A 35 35 0 0 1 0 35 Z" fill="none" stroke="#000" stroke-width="2"/>
+    <path d="M 0 -35 A 35 35 0 0 0 0 35 Z" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="16" y="4" font-size="12" text-anchor="middle" dominant-baseline="central">AM</text>
+    <text x="-16" y="4" font-size="12" text-anchor="middle" dominant-baseline="central">PM</text>
+
+    <!-- 12 Hour Circles -->
+    <g id="hourGroup"></g>
+
+    <!-- Minute Indents Along Outer Circle -->
+    <g id="tickGroup"></g>
+  </svg>
+
+  <script>
+    let meridiem = null; // "AM" or "PM"
+    let hour = null;     // 1 to 12
+    let minute = null;   // 0 to 59
+    let isDragging = false;
+
+    const clock = document.getElementById('clock');
+    const display = document.getElementById('display');
+
+    function setupDial() {
+      let hoursHTML = '';
+      for (let i = 1; i <= 12; i++) {
+        const rad = (i * 30 - 90) * Math.PI / 180;
+        const x = 60 * Math.cos(rad), y = 60 * Math.sin(rad);
+        hoursHTML += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#000" stroke-width="1.5"/>`;
+        hoursHTML += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="12">${i}</text>`;
+      }
+      document.getElementById('hourGroup').innerHTML = hoursHTML;
+
+      let ticksHTML = '';
+      for (let i = 0; i < 60; i++) {
+        const rad = (i * 6 - 90) * Math.PI / 180;
+        const x1 = 81 * Math.cos(rad), y1 = 81 * Math.sin(rad);
+        const x2 = 85 * Math.cos(rad), y2 = 85 * Math.sin(rad);
+        ticksHTML += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#000" stroke-width="${i % 5 === 0 ? 2 : 1}"/>`;
+      }
+      document.getElementById('tickGroup').innerHTML = ticksHTML;
+    }
+
+    // Convert Screen Pointer Event -> Exact SVG ViewBox Coordinates
+    function getSvgCoordinates(e) {
+      const pt = clock.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const cursorInSvgSpace = pt.matrixTransform(clock.getScreenCTM().inverse());
+
+      const x = cursorInSvgSpace.x;
+      const y = cursorInSvgSpace.y;
+      const distance = Math.hypot(x, y);
+      const angle = (Math.atan2(y, x) * 180 / Math.PI + 450) % 360;
+
+      return { x, distance, angle };
+    }
+
+    function updateDisplay() {
+      const hrText = hour ? String(hour).padStart(2, '0') : '  ';
+      const minText = minute !== null ? String(minute).padStart(2, '0') : '  ';
+      const ampmText = meridiem ? meridiem : '  ';
+
+      if (!meridiem) display.textContent = '[  :   ]';
+      else if (hour === null) display.textContent = `[  :   ${ampmText}]`;
+      else if (minute === null) display.textContent = `[${hrText}:   ${ampmText}]`;
+      else display.textContent = `[${hrText}:${minText} ${ampmText}]`;
+    }
+
+    clock.onpointerdown = (e) => {
+      isDragging = true;
+      hour = null;
+      minute = null;
+      clock.setPointerCapture(e.pointerId);
+
+      const { x } = getSvgCoordinates(e);
+      meridiem = x < 0 ? 'PM' : 'AM';
+      updateDisplay();
+    };
+
+    clock.onpointermove = (e) => {
+      if (!isDragging) return;
+      const { distance, angle } = getSvgCoordinates(e);
+
+      // INSIDE CIRCLE (Radius <= 85): Updating Hour
+      if (distance <= 85) {
+        if (distance > 35) {
+          const hourIndex = Math.round(angle / 30) % 12;
+          hour = hourIndex === 0 ? 12 : hourIndex;
+        }
+      }
+      // OUTSIDE CIRCLE (Radius > 85): Minute Entry Mode
+      else if (hour !== null) {
+        minute = Math.floor(angle / 6) % 60;
+      }
+
+      updateDisplay();
+    };
+
+    clock.onpointerup = () => {
+      isDragging = false;
+    };
+
+    setupDial();
+  </script>
+</body>
+</html>
