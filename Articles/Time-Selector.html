@@ -1,23 +1,49 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name"viewport" content="width=device-width, initial-scale=1.0">
-<meta charset="utf-8">
-<title>Time Picker</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Time Picker</title>
+  <!-- Global site styles (untouched) -->
+  <link rel="stylesheet" href="../styles.css">
+
+  <!-- Component-specific layout overrides -->
+  <style>
+    /* Centers the component vertically on the page */
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+
+    /* Scales clock to occupy full available width up to 440px on mobile/desktop */
+    #clock {
+      display: block;
+      margin: 0 auto;
+      user-select: none;
+      touch-action: none;
+      width: 100%;
+      max-width: 440px;
+      height: auto;
+    }
+  </style>
 </head>
 <body>
 
-  <h1 id="display" style="font-family: monospace; text-align: center; margin-top: 20px;">[  :   ]</h1>
+  <h1 id="display" class="centered-heading" style="font-family: monospace;">[  :   ]</h1>
 
-  <svg id="clock" viewBox="-120 -120 240 240" width="360" height="360" style="display: block; margin: 0 auto; user-select: none; touch-action: none;">
+  <!-- Uses stroke/fill = "currentColor" to inherit --text-color from styles.css -->
+  <svg id="clock" viewBox="-120 -120 240 240">
     <!-- Main Outer Boundary Circle (Radius = 85) -->
-    <circle r="85" fill="none" stroke="#000" stroke-width="2"/>
+    <circle r="85" fill="none" stroke="currentColor" stroke-width="2"/>
 
     <!-- Center AM/PM Outlines -->
-    <path d="M 0 -35 A 35 35 0 0 1 0 35 Z" fill="none" stroke="#000" stroke-width="2"/>
-    <path d="M 0 -35 A 35 35 0 0 0 0 35 Z" fill="none" stroke="#000" stroke-width="2"/>
-    <text x="16" y="4" font-size="12" text-anchor="middle" dominant-baseline="central">AM</text>
-    <text x="-16" y="4" font-size="12" text-anchor="middle" dominant-baseline="central">PM</text>
+    <path d="M 0 -35 A 35 35 0 0 1 0 35 Z" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M 0 -35 A 35 35 0 0 0 0 35 Z" fill="none" stroke="currentColor" stroke-width="2"/>
+    <text x="16" y="4" fill="currentColor" font-size="12" text-anchor="middle" dominant-baseline="central">AM</text>
+    <text x="-16" y="4" fill="currentColor" font-size="12" text-anchor="middle" dominant-baseline="central">PM</text>
 
     <!-- 12 Hour Circles -->
     <g id="hourGroup"></g>
@@ -40,8 +66,8 @@
       for (let i = 1; i <= 12; i++) {
         const rad = (i * 30 - 90) * Math.PI / 180;
         const x = 60 * Math.cos(rad), y = 60 * Math.sin(rad);
-        hoursHTML += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#000" stroke-width="1.5"/>`;
-        hoursHTML += `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="12">${i}</text>`;
+        hoursHTML += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="currentColor" stroke-width="1.5"/>`;
+        hoursHTML += `<text x="${x}" y="${y}" fill="currentColor" text-anchor="middle" dominant-baseline="central" font-size="12">${i}</text>`;
       }
       document.getElementById('hourGroup').innerHTML = hoursHTML;
 
@@ -50,12 +76,12 @@
         const rad = (i * 6 - 90) * Math.PI / 180;
         const x1 = 81 * Math.cos(rad), y1 = 81 * Math.sin(rad);
         const x2 = 85 * Math.cos(rad), y2 = 85 * Math.sin(rad);
-        ticksHTML += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#000" stroke-width="${i % 5 === 0 ? 2 : 1}"/>`;
+        ticksHTML += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="currentColor" stroke-width="${i % 5 === 0 ? 2 : 1}"/>`;
       }
       document.getElementById('tickGroup').innerHTML = ticksHTML;
     }
 
-    // Convert Screen Pointer Event -> Exact SVG ViewBox Coordinates
+    // Accurate SVG coordinate transform (independent of screen size/scaling)
     function getSvgCoordinates(e) {
       const pt = clock.createSVGPoint();
       pt.x = e.clientX;
