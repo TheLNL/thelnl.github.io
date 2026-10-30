@@ -25,6 +25,8 @@
   #legend span { margin-right: 8px; }
   #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; }
   textarea { width: 100%; box-sizing: border-box; }
+  #manual:not(:empty) { border: 1px solid #999; background: #f4f4f4; padding: 6px; margin: 4px 0; }
+  #manual div { margin: 3px 0; }
   #warn:not(:empty) { white-space: pre-wrap; background: #fff3cd; color: #842029; border: 1px solid #e0a800; border-left: 4px solid #d9534f; padding: 4px 6px; margin: 4px 0; }
 </style>
 </head>
@@ -48,6 +50,8 @@
 <div id="legend"></div>
 <div id="bin"></div>
 <div id="warn"></div>
+<button id="groupBtn" style="display:none">Group manually</button>
+<div id="manual"></div>
 <div id="tooltip"></div>
 
 <script>
@@ -697,6 +701,17 @@ function combineRows(rows, course) {
     const sameHalf = theory.filter(t => t.faculty === fac && half(t.slot) === h);
     let cand = facLabs.filter(l => labHalf(l.slot) && labHalf(l.slot) !== h);
     if (!cand.length) cand = facLabs;
+    const man = manualPairs[course + '|' + key];
+    if (man && man.length === sameHalf.length) {
+      done.add(key);
+      sameHalf.forEach((t, i) => {
+        const l = cand.find(x => x.slot === man[i]);
+        if (!l) return;
+        used.add(l);
+        out.push([`${t.slot} + ${l.slot}`, venueOf([t, l]), fac, typeOf(t.type)]);
+      });
+      return;
+    }
     cand.forEach(l => used.add(l));
     if (sameHalf.length === 1 && cand.length === 1) {
       out.push([`${th.slot} + ${cand[0].slot}`, venueOf([th, cand[0]]), fac, typeOf(th.type)]);
@@ -704,7 +719,7 @@ function combineRows(rows, course) {
       done.add(key);
       const ts = sameHalf.map(t => t.slot), ls = cand.map(l => l.slot);
       out.push([[...ts, ...ls].join(' + '), venueOf([...sameHalf, ...cand]), fac, typeOf(th.type)]);
-      ambiguousGroups.push({ course, text: `${fac} (${ts.join(', ')} with ${ls.join(', ')})` });
+      ambiguousGroups.push({ course, key, fac, theory: sameHalf, labs: cand, text: `${fac} (${ts.join(', ')} with ${ls.join(', ')})` });
     }
   });
   oc.forEach(o => out.push([o.slot, venueBlock(o.venue), o.faculty, o.type]));
@@ -716,6 +731,8 @@ function combineRows(rows, course) {
 // combined rows (header "Slot Combination") are used as they are
 let droppedLabs = []; // lab rows that did not end up in any option
 let ambiguousGroups = []; // professors whose theory/lab pairing can't be decided
+let manualPairs = {};     // 'course|faculty|half' -> lab slot chosen for each theory row, set with the Group manually panel
+let currentText = '';
 
 function parse(text) {
   droppedLabs = [];
@@ -863,6 +880,7 @@ function render() {
   Object.keys(byCourse).forEach(c => warn.push(`${c}: grouping can't be done properly for this course, assign manually. These are grouped together as one option each: ` + byCourse[c].join('; ')));
   if (droppedLabs.length) warn.push(`${droppedLabs.length} lab rows not used (one lab is paired per theory row, or the professor has no theory row): ` + droppedLabs.join('; '));
   document.getElementById('warn').textContent = warn.join('\n');
+  document.getElementById('groupBtn').style.display = (ambiguousGroups.length || Object.keys(manualPairs).length) ? '' : 'none';
 }
 
 function hoverOn(e, o) {
@@ -909,7 +927,61 @@ function toggle(o) {
   render();
 }
 
+function reparse() {
+  options = parse(currentText);
+  filters = {};
+  deleted = new Set();
+  document.getElementById('manual').innerHTML = '';
+  document.getElementById('groupBtn').textContent = 'Group manually';
+  render();
+}
+
+function toggleManual() {
+  const box = document.getElementById('manual');
+  const btn = document.getElementById('groupBtn');
+  if (box.innerHTML) { box.innerHTML = ''; btn.textContent = 'Group manually'; return; }
+  btn.textContent = 'Hide manual grouping';
+  const sels = [];
+  ambiguousGroups.forEach(g => {
+    const d = document.createElement('div');
+    d.append(`${g.course} - ${g.fac}:`);
+    g.theory.forEach((t, ti) => {
+      d.append(` ${t.slot} (${t.venue}) with `);
+      const sel = document.createElement('select');
+      sel.innerHTML = '<option value="">choose lab</option>' +
+        g.labs.map(l => `<option value="${l.slot}">${l.slot} (${l.venue})</option>`).join('');
+      d.appendChild(sel);
+      sels.push([g, ti, sel]);
+    });
+    box.appendChild(d);
+  });
+  if (ambiguousGroups.length) {
+    const ok = document.createElement('button');
+    ok.textContent = 'Apply grouping';
+    ok.onclick = () => {
+      const chosen = {};
+      sels.forEach(([g, ti, sel]) => { const k = g.course + '|' + g.key; (chosen[k] = chosen[k] || [])[ti] = sel.value; });
+      let changed = false;
+      Object.keys(chosen).forEach(k => {
+        if (chosen[k].every(x => x)) { manualPairs[k] = chosen[k]; changed = true; }
+      });
+      if (changed) reparse(); else alert('Choose a lab for every theory slot of a professor first.');
+    };
+    box.appendChild(ok);
+  }
+  if (Object.keys(manualPairs).length) {
+    const clr = document.createElement('button');
+    clr.textContent = 'Clear manual groupings';
+    clr.onclick = () => { manualPairs = {}; reparse(); };
+    box.appendChild(clr);
+  }
+  if (!box.innerHTML) { box.textContent = 'Nothing to group manually.'; }
+  box.scrollIntoView({ block: 'nearest' });
+}
+
 function init(text) {
+  currentText = text;
+  manualPairs = {};
   options = parse(text);
   filters = {};
   deleted = new Set();
@@ -921,6 +993,7 @@ function init(text) {
 
 document.getElementById('rawInput').value = DEFAULT_DATA;
 document.getElementById('applyBtn').onclick = () => init(document.getElementById('rawInput').value);
+document.getElementById('groupBtn').addEventListener('click', toggleManual);
 document.getElementById('resetBtn').onclick = () => { filters = {}; render(); };
 renderHeader();
 init(DEFAULT_DATA);
