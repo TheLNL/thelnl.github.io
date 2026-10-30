@@ -2,7 +2,7 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 	<channel>
 		<title>My Site</title>
-		<link>http://localhost:1313/</link>
+		<link>https://thelnl.github.io/</link>
 		<description>Recent content on My Site</description>
 		<generator>Hugo</generator>
 		<language>en-in</language>
@@ -10,19 +10,19 @@
 		
 		
 		
-			<atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+			<atom:link href="https://thelnl.github.io/index.xml" rel="self" type="application/rss+xml" />
 			<item>
 				<title>Ideas</title>
-				<link>http://localhost:1313/ideas/</link>
+				<link>https://thelnl.github.io/ideas/</link>
 				<pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-				<guid>http://localhost:1313/ideas/</guid>
+				<guid>https://thelnl.github.io/ideas/</guid>
 				<description>&lt;h1 id=&#34;this-is-a-list-of-various-ideas-to-explore&#34;&gt;This is a list of various ideas to explore.&lt;/h1&gt;&#xA;&lt;h5 id=&#34;disclaimer-these-ideas-are-raw-thoughts-without-much-consideration-of-fesability-or-consequences-they-can-and-will-be-stupid-at-times&#34;&gt;Disclaimer: these ideas are raw thoughts without much consideration of fesability or consequences, they can and will be stupid at times.&lt;/h5&gt;&#xA;&lt;p&gt;1- Newspaper generator:&#xA;Newspaper reading experience is much better than reading of articles on the internet or through RSS feed readers for some reason. So maybe we can mimic it by formatting rss feeds like newspapers.&lt;/p&gt;&#xA;&lt;p&gt;2- Image recognition survey tool:&#xA;Automatic tagging of various features of objects whose pics have been taken so that systematic survey can be done faster than manually entering values&lt;/p&gt;</description>
 			</item>
 			<item>
 				<title>What I like about the terminal</title>
-				<link>http://localhost:1313/what-i-like-about-the-teminal/</link>
+				<link>https://thelnl.github.io/what-i-like-about-the-teminal/</link>
 				<pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-				<guid>http://localhost:1313/what-i-like-about-the-teminal/</guid>
+				<guid>https://thelnl.github.io/what-i-like-about-the-teminal/</guid>
 				<description>&lt;h1 id=&#34;what-i-like-about-the-terminal&#34;&gt;What I like about the terminal&lt;/h1&gt;&#xA;&lt;p&gt;The terminal is basically a drawing surface where you are limited to a grid for layout. Everything else is just a design decision of the software that runs in the terminal, I will look at both aspects.&lt;/p&gt;&#xA;&lt;ol&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;grid makes locating easier&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;because locating is easier padding is not required, saving screen space.&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;Screen space is also saved by not using huge UI elements. the GUI text editor I am writing this in has a save button that would be the size of a 3x5 Terminal character grid&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;You don&amp;rsquo;t often have to switch bw input methods like GUI often forces you to do&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;There is the cli that allows you to combine many individual tools to craft a customized tool that makes certain tasks effortless&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;The software found in it is often honest, informative and transparent, removing the frustration of dealing with unexpected behaviour in a GUI app and not knowing what is going on or what to do&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;Fixed color palette makes is easy to associate certain colors with certain ideas&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;li&gt;&#xA;&lt;p&gt;Terminal software doesn&amp;rsquo;t hesitate to use colors to make highlight differences&lt;/p&gt;&#xA;&lt;/li&gt;&#xA;&lt;/ol&gt;</description>
 			</item>
 	</channel>

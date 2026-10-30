@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timetable Slot Visualizer</title>
+<style>
+  body { font: 11px sans-serif; margin: 0; }
+  button, summary { font: inherit; }
+  #tooltip { position: fixed; display: none; z-index: 10; background: #fff; border: 1px solid #000; pointer-events: none; max-width: 90vw; }
+  #wrap { overflow-x: auto; }
+  /* one column per 10 minutes, 08:00 -> 19:20 (68 columns) */
+  table { border-collapse: collapse; width: 100%; min-width: 900px; table-layout: fixed; }
+  th, td { border: 1px solid #ccc; padding: 0; text-align: center; font-weight: normal; }
+  thead th { text-align: left; padding-left: 2px; }
+  td { position: relative; height: 16px; }
+  tr.lab td, tr.lab th { border-bottom-color: #999; }
+  td { text-align: left; line-height: 12px; }
+  .in, .dots { display: contents; }
+  .lbl { display: inline; margin-right: 3px; color: #888; white-space: nowrap; }
+  .dot { display: inline-block; vertical-align: middle; width: 12px; height: 12px; margin: 1px; border-radius: 50%; cursor: pointer;
+    color: #fff; font-size: 8px; line-height: 12px; text-align: center; overflow: hidden; }
+  .dot.picked { outline: 1px solid #000; outline-offset: 1px; }
+  .dot.hl { background: #000 !important; }
+  #legend span { margin-right: 8px; }
+  #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; }
+  textarea { width: 100%; box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+<button id="resetBtn">Reset filter</button>
+<details>
+  <summary>Paste / edit data</summary>
+  <textarea id="rawInput" rows="8"></textarea>
+  <button id="applyBtn">Apply</button>
+</details>
+
+<div id="wrap">
+<table>
+  <colgroup id="cols"></colgroup>
+  <thead id="head"></thead>
+  <tbody id="gridBody"></tbody>
+</table>
+</div>
+
+<div id="legend"></div>
+<div id="bin"></div>
+<div id="warn"></div>
+<div id="tooltip"></div>
+
+<script>
+const DEFAULT_DATA = `# GERMAN - BAGER101
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+TAA2 + L19+L20	SJT+TT	ARATI KUMARI	ETH+ELA
+TCC1 + L59+L60	SJT+PRP	ABHIJIT KR DARBEY	ETH+ELA
+TBB2 + L19+L20	SJT+TT	ARATI KUMARI	ETH+ELA
+TAA1 + L57+L58	SJT+PRP	DHANANJAY KUMAR	ETH+ELA
+TCC1 + L53+L54	SJT+PRP	AMIT KUMAR SAINI	ETH+ELA
+TCC1 + L57+L58	TT	ADAIKALAM ARULANANDAM	ETH+ELA
+
+# India Studies - BAHUM101
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+NIL	N/A	MULUGU S NEELOTPAL	OC
+NIL	N/A	RIZWAN AHMAD	OC
+NIL	N/A	ADIL AHMAD SHAH	OC
+NIL	N/A	SHAHID HAMID RAINA	OC
+NIL	N/A	BANGALORE MORARJI	OC
+NIL	N/A	SUDHEER C V	OC
+NIL	N/A	SARAVANA BHAVAN N	OC
+NIL	N/A	RAMNATH REGHUNADHAN	OC
+NIL	N/A	AQUIB PARVEZ	OC
+
+# Engineering Physics - BAPHY105
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+G2+TG2 + L57+L58	PRP+TT	AMRITA DEY	ETH+ELA
+G1+TG1 + L35+L36	PRPG	VISHNUDATH K N	ETH+ELA
+F1+TF1 + L43+L44	PRP+TT	SASMITA MOHAKUD	ETH+ELA
+G2+TG2 + L53+L54	PRPG	SAMUEL P	ETH+ELA
+G1+TG1 + L15+L16	PRP+TT	AMRITA DEY	ETH+ELA
+G2+TG2 + L23+L24	PRPG	BALAKRISHNAN S	ETH+ELA
+G2+TG2 + L55+L56	PRP+TT	SHOBANA M K	ETH+ELA
+F1+TF1 + L5+L6	PRPG	SOUMYA CHAKRABARTI	ETH+ELA
+F2+TF2 + L29+L30	PRP+PRPG	DHRITIMAN GUPTA	ETH+ELA
+G1+TG1 + L37+L38	PRP+TT	SRIDHAR S	ETH+ELA
+F1+TF1 + L59+L60	PRP+PRPG	VASU DEV	ETH+ELA
+F2+TF2 + L49+L50	PRP+PRPG	ABHINAV ANAND	ETH+ELA
+G1+TG1 + L51+L52	PRPG	MURALI R	ETH+ELA
+F2+TF2 + L3+L4	PRPG+TT	PANKAJ SHEORAN	ETH+ELA
+G1+TG1 + L39+L40	PRPG	UMMAL MOMEEN M	ETH+ELA
+F2+TF2 + L3+L4	PRP+PRPG	RAMBABU YALAVARTHI	ETH+ELA
+F1+TF1 + L9+L10	PRPG	VIJAYA CHAMUNDEESWARI S P	ETH+ELA
+G2+TG2 + L21+L22	PRP+PRPG	SANGEM RAJESH	ETH+ELA
+F2+TF2 + L37+L38	PRPG	VIJAYA CHAMUNDEESWARI S P	ETH+ELA
+G2+TG2 + L27+L28	PRP+PRPG	SHAIK KALEEMULLA	ETH+ELA
+F2+TF2 + L15+L16	PRP+PRPG	MITESH KUMAR BEHERA	ETH+ELA
+G1+TG1 + L25+L26	PRP+PRPG	KRISHNARJUN BANERJEE	ETH+ELA
+G2+TG2 + L55+L56	PRP+PRPG	KRISHNARJUN BANERJEE	ETH+ELA
+G1+TG1 + L33+L34	PRP+PRPG	KRISHNA CHANDAR N	ETH+ELA
+F2+TF2 + L49+L50	PRPG+TT	SOUMYA CHAKRABARTI	ETH+ELA
+F1+TF1 + L47+L48	PRP+PRPG	SANDEEP CHAKRABORTY	ETH+ELA
+G1+TG1 + L27+L28	PRP+TT	SHOBANA M K	ETH+ELA
+F1+TF1 + L57+L58	PRP+PRPG	SHAGUN KAUSHAL	ETH+ELA
+G1+TG1 + L13+L14	PRP+PRPG	KANHAIYA LAL PANDEY	ETH+ELA
+G2+TG2 + L7+L8	PRPG	PREMKUMAR S	ETH+ELA
+G2+TG2 + L5+L6	PRP+TT	KURAGANTI VASU	ETH+ELA
+F1+TF1 + L45+L46	PRP+PRPG	DHANOJ GUPTA	ETH+ELA
+F1+TF1 + L41+L42	PRPG	DEEPAK BHAT	ETH+ELA
+G1+TG1 + L11+L12	PRPG	SAMUEL P	ETH+ELA
+F2+TF2 + L1+L2	PRPG	GOPAL	ETH+ELA
+F1+TF1 + L31+L32	PRP+PRPG	ABHISHEK KUMAR SINGH	ETH+ELA
+G2+TG2 + L43+L44	PRP+PRPG	KANHAIYA LAL PANDEY	ETH+ELA
+F1+TF1 + L19+L20	PRP+PRPG	ABHINAV ANAND	ETH+ELA
+F2+TF2 + L13+L14	PRP+TT	LAXMI NARAYAN TRIPATHI	ETH+ELA
+
+# Computational Structures - BACSE103
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+C1+TC1 + L3+L4	PRPG+PRP	SIDHARTH GAUTAM	ETH+ELA
+D1+TD1 + L5+L6	SJT	YUSUF AKHTAR	ETH+ELA
+C2+TC2 + L49+L50	PRPG+PRP	NAVEEN MISHRA	ETH+ELA
+C2+TC2 + L33+L34	PRPG+PRP	CHRISTINA JOSEPHINE MALATHI A	ETH+ELA
+C2+TC2 + L37+L38	PRP	NARASIMMAN S	ETH+ELA
+C1+TC1 + L5+L6	PRP	MOHIUL ISLAM	ETH+ELA
+C1+TC1 + L1+L2	PRP	SUKANTA KUMAR TULO	ETH+ELA
+D2+TD2 + L43+L44	SJTG+SJT	KRISHNAMOORTHY N	ETH+ELA
+C1+TC1 + L1+L2	PRP	NARASIMMAN S	ETH+ELA
+C2+TC2 + L33+L34	PRP	SUKANTA KUMAR TULO	ETH+ELA
+C1+TC1 + L7+L8	PRPG+PRP	RAJESH N	ETH+ELA
+D2+TD2 + L35+L36	SJT	AYESWARYA S	ETH+ELA
+C2+TC2 + L47+L48	PRP	RICHA DUBEY	ETH+ELA
+C2+TC2 + L49+L50	PRPG+PRP	AVINASH CHANDRA	ETH+ELA
+D1+TD1 + L9+L10	SJT	AYESWARYA S	ETH+ELA
+C1+TC1 + L19+L20	PRPG+PRP	NAVEEN MISHRA	ETH+ELA
+C2+TC2 + L31+L32	PRPG+PRP	SHANIDUL HOQUE	ETH+ELA
+C1+TC1 + L29+L30	PRPG+PRP	SHANIDUL HOQUE	ETH+ELA
+C2+TC2 + L53+L54	PRP	SULTAN MAHMOOD CHOWDHURY	ETH+ELA
+C1+TC1 + L21+L22	PRP	HEMALATHA K	ETH+ELA
+C2+TC2 + L11+L12	PRP	SUBHRA SANKHA SARMA	ETH+ELA
+C1+TC1 + L39+L40	PRP	ANISHKUMAR MANOHARAN	ETH+ELA
+D2+TD2 + L37+L38	SJTG+SJT	YUSUF AKHTAR	ETH+ELA
+C2+TC2 + L45+L46	PRPG+PRP	RAJESH N	ETH+ELA
+C1+TC1 + L5+L6	PRP	VIJAYA DURGA CHINTALA	ETH+ELA
+C2+TC2 + L51+L52	PRP	KALYANBRATA GHOSH	ETH+ELA
+C2+TC2 + L35+L36	PRP	VIJAYA DURGA CHINTALA	ETH+ELA
+C1+TC1 + L23+L24	PRP	SULTAN MAHMOOD CHOWDHURY	ETH+ELA
+C2+TC2 + L13+L14	PRP	VIKAS VIJAYVARGIYA	ETH+ELA
+C2+TC2 + L35+L36	PRP	MOHIUL ISLAM	ETH+ELA
+C2+TC2 + L47+L48	PRP	HEMALATHA K	ETH+ELA
+C1+TC1 + L7+L8	PRP	KALYANBRATA GHOSH	ETH+ELA
+C1+TC1 + L3+L4	PRPG+PRP	ARUN DEV DHAR DWIVEDI	ETH+ELA
+C2+TC2 + L9+L10	PRP	PRABHU R	ETH+ELA
+D1+TD1 + L7+L8	SJT	KRISHNAMOORTHY N	ETH+ELA
+C2+TC2 + L37+L38	PRPG+PRP	ARUN DEV DHAR DWIVEDI	ETH+ELA
+C1+TC1 + L19+L20	PRPG+PRP	AVINASH CHANDRA	ETH+ELA
+C2+TC2 + L51+L52	PRP	ANIS FATEMA	ETH+ELA
+C1+TC1 + L23+L24	PRPG+PRP	JAFFINO	ETH+ELA
+C2+TC2 + L57+L58	PRPG+PRP	SIDHARTH GAUTAM	ETH+ELA
+C1+TC1 + L29+L30	PRP	ANIS FATEMA	ETH+ELA
+C2+TC2 + L53+L54	PRPG+PRP	JAFFINO	ETH+ELA
+C1+TC1 + L15+L16	PRPG+PRP	CHRISTINA JOSEPHINE MALATHI A	ETH+ELA
+C1+TC1 + L21+L22	PRP	RICHA DUBEY	ETH+ELA
+C1+TC1 + L55+L56	PRP	BISWAJIT DWIVEDY	ETH+ELA
+C1+TC1 + L41+L42	PRP	GAUTAM NARAYAN	ETH+ELA
+C1+TC1 + L57+L58	PRP	PRABIN JOSE J	ETH+ELA
+
+# Structured and Object Oriented Programming - BACSE104
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+C1+TC1 + L3+L4	PRPG+PRP	SIDHARTH GAUTAM	ETH+ELA
+D1+TD1 + L5+L6	SJT	YUSUF AKHTAR	ETH+ELA
+C2+TC2 + L49+L50	PRPG+PRP	NAVEEN MISHRA	ETH+ELA
+C2+TC2 + L33+L34	PRPG+PRP	CHRISTINA JOSEPHINE MALATHI A	ETH+ELA
+C2+TC2 + L37+L38	PRP	NARASIMMAN S	ETH+ELA
+C1+TC1 + L5+L6	PRP	MOHIUL ISLAM	ETH+ELA
+C1+TC1 + L1+L2	PRP	SUKANTA KUMAR TULO	ETH+ELA
+D2+TD2 + L43+L44	SJTG+SJT	KRISHNAMOORTHY N	ETH+ELA
+C1+TC1 + L1+L2	PRP	NARASIMMAN S	ETH+ELA
+C2+TC2 + L33+L34	PRP	SUKANTA KUMAR TULO	ETH+ELA
+C1+TC1 + L7+L8	PRPG+PRP	RAJESH N	ETH+ELA
+D2+TD2 + L35+L36	SJT	AYESWARYA S	ETH+ELA
+C2+TC2 + L47+L48	PRP	RICHA DUBEY	ETH+ELA
+C2+TC2 + L49+L50	PRPG+PRP	AVINASH CHANDRA	ETH+ELA
+D1+TD1 + L9+L10	SJT	AYESWARYA S	ETH+ELA
+C1+TC1 + L19+L20	PRPG+PRP	NAVEEN MISHRA	ETH+ELA
+C2+TC2 + L31+L32	PRPG+PRP	SHANIDUL HOQUE	ETH+ELA
+C1+TC1 + L29+L30	PRPG+PRP	SHANIDUL HOQUE	ETH+ELA
+C2+TC2 + L53+L54	PRP	SULTAN MAHMOOD CHOWDHURY	ETH+ELA
+C1+TC1 + L21+L22	PRP	HEMALATHA K	ETH+ELA
+C2+TC2 + L11+L12	PRP	SUBHRA SANKHA SARMA	ETH+ELA
+C1+TC1 + L39+L40	PRP	ANISHKUMAR MANOHARAN	ETH+ELA
+D2+TD2 + L37+L38	SJTG+SJT	YUSUF AKHTAR	ETH+ELA
+C2+TC2 + L45+L46	PRPG+PRP	RAJESH N	ETH+ELA
+C1+TC1 + L5+L6	PRP	VIJAYA DURGA CHINTALA	ETH+ELA
+C2+TC2 + L51+L52	PRP	KALYANBRATA GHOSH	ETH+ELA
+C2+TC2 + L35+L36	PRP	VIJAYA DURGA CHINTALA	ETH+ELA
+C1+TC1 + L23+L24	PRP	SULTAN MAHMOOD CHOWDHURY	ETH+ELA
+C2+TC2 + L13+L14	PRP	VIKAS VIJAYVARGIYA	ETH+ELA
+C2+TC2 + L35+L36	PRP	MOHIUL ISLAM	ETH+ELA
+C2+TC2 + L47+L48	PRP	HEMALATHA K	ETH+ELA
+C1+TC1 + L7+L8	PRP	KALYANBRATA GHOSH	ETH+ELA
+C1+TC1 + L3+L4	PRPG+PRP	ARUN DEV DHAR DWIVEDI	ETH+ELA
+C2+TC2 + L9+L10	PRP	PRABHU R	ETH+ELA
+D1+TD1 + L7+L8	SJT	KRISHNAMOORTHY N	ETH+ELA
+C2+TC2 + L37+L38	PRPG+PRP	ARUN DEV DHAR DWIVEDI	ETH+ELA
+C1+TC1 + L19+L20	PRPG+PRP	AVINASH CHANDRA	ETH+ELA
+C2+TC2 + L51+L52	PRP	ANIS FATEMA	ETH+ELA
+C1+TC1 + L23+L24	PRPG+PRP	JAFFINO	ETH+ELA
+C2+TC2 + L57+L58	PRPG+PRP	SIDHARTH GAUTAM	ETH+ELA
+C1+TC1 + L29+L30	PRP	ANIS FATEMA	ETH+ELA
+C2+TC2 + L53+L54	PRPG+PRP	JAFFINO	ETH+ELA
+C1+TC1 + L15+L16	PRPG+PRP	CHRISTINA JOSEPHINE MALATHI A	ETH+ELA
+C1+TC1 + L21+L22	PRP	RICHA DUBEY	ETH+ELA
+C1+TC1 + L55+L56	PRP	BISWAJIT DWIVEDY	ETH+ELA
+C1+TC1 + L41+L42	PRP	GAUTAM NARAYAN	ETH+ELA
+C1+TC1 + L57+L58	PRP	PRABIN JOSE J	ETH+ELA
+
+# Data Structures and Algorithms - BACSE105
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+E1+TE1 + L51+L52	PRP	SARAVANAN R	ETH+ELA
+E2+TE2 + L27+L28	PRP	GAYATHRI P	ETH+ELA
+E2+TE2 + L41+L42	PRP	BADRINATH N	ETH+ELA
+E1+TE1 + L11+L12	PRP	ANINDITA KUNDU	ETH+ELA
+E1+TE1 + L3+L4	PRP	BADRINATH N	ETH+ELA
+E2+TE2 + L21+L22	PRP	JOSHVA DEVADAS T	ETH+ELA
+E2+TE2 + L49+L50	SJT	MYTHILI N	ETH+ELA
+E2+TE2 + L43+L44	PRP	ATHIRA K	ETH+ELA
+E1+TE1 + L11+L12	PRPG+PRP	GOPINATH M.P	ETH+ELA
+E1+TE1 + L1+L2	PRPG+PRP	SUBRAMANYAM REDDY A	ETH+ELA
+E2+TE2 + L33+L34	PRP	KANAGARAJ K	ETH+ELA
+E2+TE2 + L57+L58	PRPG+PRP	GOPINATH M.P	ETH+ELA
+E2+TE2 + L31+L32	SJT	VINOTHKUMAR V	ETH+ELA
+E1+TE1 + L19+L20	PRP	RAJAN SHRIVASTAVA	ETH+ELA
+E2+TE2 + L7+L8	PRP	DEBI PRASANNA ACHARJYA	ETH+ELA
+E2+TE2 + L43+L44	PRPG+PRP	SRIVANI A	ETH+ELA
+E2+TE2 + L35+L36	PRP	RAJAN SHRIVASTAVA	ETH+ELA
+E1+TE1 + L15+L16	PRPG+PRP	SRIVANI A	ETH+ELA
+E1+TE1 + L5+L6	PRPG+PRP	SIVAPRASAD DARLA	ETH+ELA
+E2+TE2 + L41+L42	PRPG+PRP	NALLIAH M	ETH+ELA
+E1+TE1 + L1+L2	PRPG+PRP	NALLIAH M	ETH+ELA
+E1+TE1 + L3+L4	PRPG+PRP	SARAVANARAJAN M C	ETH+ELA
+E1+TE1 + L5+L6	PRP	RAJA S P	ETH+ELA
+E1+TE1 + L35+L36	PRP	SHALINI L	ETH+ELA
+E2+TE2 + L31+L32	PRP	ANINDITA KUNDU	ETH+ELA
+E1+TE1 + L5+L6	SJT	LAWANYA SHRI M	ETH+ELA
+E2+TE2 + L49+L50	PRPG+PRP	SIVAPRASAD DARLA	ETH+ELA
+E2+TE2 + L47+L48	PRPG+PRP	SUBRAMANYAM REDDY A	ETH+ELA
+E2+TE2 + L41+L42	SJT+SJTG	LAWANYA SHRI M	ETH+ELA
+E1+TE1 + L15+L16	PRP	ATHIRA K	ETH+ELA
+E2+TE2 + L41+L42	PRP	SIVARAJ C	ETH+ELA
+E2+TE2 + L49+L50	PRP	RAJA S P	ETH+ELA
+E1+TE1 + L3+L4	PRP	SIVARAJ C	ETH+ELA
+E2+TE2 + L33+L34	PRP	ADALINE SUJI R	ETH+ELA
+E1+TE1 + L13+L14	PRP	ADALINE SUJI R	ETH+ELA
+E1+TE1 + L37+L38	PRP	ILANTHENRAL K P S K	ETH+ELA
+E2+TE2 + L45+L46	PRPG+PRP	SHARIEF BASHA S	ETH+ELA
+E1+TE1 + L39+L40	PRP	NARAYANAMOORTHI M	ETH+ELA
+E1+TE1 + L19+L20	PRPG+PRP	SHARIEF BASHA S	ETH+ELA
+E1+TE1 + L13+L14	PRP	KANAGARAJ K	ETH+ELA
+E2+TE2 + L45+L46	PRPG+PRP	SARAVANARAJAN M C	ETH+ELA
+E1+TE1 + L29+L30	PRPG+PRP	JAGALINGAM P	ETH+ELA
+E2+TE2 + L31+L32	PRPG+PRP	JAGALINGAM P	ETH+ELA
+E2+TE2 + L9+L10	PRP	GOVINDA K	ETH+ELA
+E1+TE1 + L27+L28	SJT	MYTHILI N	ETH+ELA
+E1+TE1 + L1+L2	SJT+SJTG	VINOTHKUMAR V	ETH+ELA
+
+# Operating Systems - BACSE106
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+B1+TB1 + L37+L38	PRP	VIJAYASHERLY V	ETH+ELA
+B1+TB1 + L9+L10	PRPG+PRP	SUDHA.S	ETH+ELA
+B2+TB2 + L53+L54	PRPG+PRP	THIRUNAVUKKARASAN M	ETH+ELA
+B1+TB1 + L33+L34	PRP	NAGARAJA RAO A	ETH+ELA
+B2+TB2 + L55+L56	PRP	PADMAVATHY T	ETH+ELA
+B1+TB1 + L29+L30	PRPG+PRP	KONATHAM SUMALATHA	ETH+ELA
+B1+TB1 + L37+L38	PRP	VIJAYARAJAN V	ETH+ELA
+B2+TB2 + L5+L6	PRP	BRISILLA R M	ETH+ELA
+B1+TB1 + L23+L24	PRPG+PRP	SATYAJIT MOHANTY	ETH+ELA
+G2+TG2 + L47+L48	SJT	KRITHIKA L.B	ETH+ELA
+B2+TB2 + L57+L58	PRPG+PRP	HITESHWAR KUMAR AZAD	ETH+ELA
+G1+TG1 + L13+L14	SJT+SJTG	KUMAR P J	ETH+ELA
+B2+TB2 + L57+L58	PRPG+PRP	SUDHA.S	ETH+ELA
+B1+TB1 + L13+L14	PRP	THIRUVENKADAM T	ETH+ELA
+B2+TB2 + L43+L44	PRPG+PRP	EZHIL ARASI V	ETH+ELA
+B1+TB1 + L25+L26	PRPG+PRP	EZHIL ARASI V	ETH+ELA
+B2+TB2 + L53+L54	PRP	THIRUVENKADAM T	ETH+ELA
+B2+TB2 + L39+L40	PRP	SIVAKUMAR T	ETH+ELA
+B1+TB1 + L45+L46	PRP	UMADEVI K S	ETH+ELA
+B2+TB2 + L29+L30	PRP	MANIVANNAN P	ETH+ELA
+B1+TB1 + L35+L36	PRP	AVISHEK NANDI	ETH+ELA
+B2+TB2 + L5+L6	PRP	ANURADHA J	ETH+ELA
+B2+TB2 + L23+L24	PRP	VENKATA LAKSHMI NARAYANA K	ETH+ELA
+B1+TB1 + L25+L26	PRP	PADMAVATHY T	ETH+ELA
+G2+TG2 + L43+L44	SJT	KUMAR P J	ETH+ELA
+G1+TG1 + L25+L26	SJT+SJTG	KRITHIKA L.B	ETH+ELA
+B1+TB1 + L33+L34	PRP	SENDHIL KUMAR K S	ETH+ELA
+B2+TB2 + L43+L44	PRPG+PRP	VIJAYANAND C	ETH+ELA
+B2+TB2 + L39+L40	PRP	ARTHI M	ETH+ELA
+B1+TB1 + L9+L10	PRP	YUVARAJ N	ETH+ELA
+B2+TB2 + L47+L48	PRPG+PRP	SATYAJIT MOHANTY	ETH+ELA
+B1+TB1 + L27+L28	PRPG+PRP	VIJAYANAND C	ETH+ELA
+B2+TB2 + L55+L56	PRPG+PRP	MANOOV R	ETH+ELA
+B1+TB1 + L27+L28	PRPG+PRP	HITESHWAR KUMAR AZAD	ETH+ELA
+B2+TB2 + L55+L56	PRP	YUVARAJ N	ETH+ELA
+B2+TB2 + L43+L44	PRPG+PRP	KONATHAM SUMALATHA	ETH+ELA
+B1+TB1 + L13+L14	PRP	ARTHI M	ETH+ELA
+B1+TB1 + L1+L2	PRP	SIVAKUMAR T	ETH+ELA
+B2+TB2 + L21+L22	PRP	RAJKUMAR S	ETH+ELA
+B1+TB1 + L49+L50	PRP	ANUSHA N	ETH+ELA
+B1+TB1 + L11+L12	PRPG+PRP	THIRUNAVUKKARASAN M	ETH+ELA
+G1+TG1 + L33+L34	SJT+SJTG	ARIVUSELVAN K	ETH+ELA
+G2+TG2 + L7+L8	SJT	BALAJI E	ETH+ELA
+B1+TB1 + L15+L16	PRPG+PRP	MANOOV R	ETH+ELA
+B2+TB2 + L19+L20	PRP	KOPPERUNDEVI N	ETH+ELA
+B2+TB2 + L7+L8	PRP	VIJAYA KUMAR K	ETH+ELA
+B1+TB1 + L51+L52	PRP	SIVAKUMAR. N	ETH+ELA
+
+# Discreet Math and Linear Algebra
+Slot Combination (Theory + Lab)	Venue (Theory + Lab)	Faculty	Course Type
+A2+TA2+TAA2	TT	PALLAVEE GUPTA	TH
+A1+TA1+TAA1	PRPG	ABHISHEK DAS	TH
+A2+TA2+TAA2	PRP	TABINDA NAHID	TH
+A2+TA2+TAA2	PRPG	GAYATHRI R	TH
+A2+TA2+TAA2	PRP	PARTHIBAN A	TH
+A1+TA1+TAA1	PRP	ABDUL HAQ	TH
+A1+TA1+TAA1	PRPG	ROY.S	TH
+A2+TA2+TAA2	PRPG	RAGHAVENDAR K	TH
+A2+TA2+TAA2	PRP	VENKATESWARLU B	TH
+A2+TA2+TAA2	PRPG	RAMU GEDDAVALASA	TH
+A1+TA1+TAA1	PRPG	SELVAKUMAR R	TH
+A2+TA2+TAA2	PRPG	POORNIMA T	TH
+A1+TA1+TAA1	PRP	PURUSOTHAM S	TH
+A1+TA1+TAA1	PRPG	RAGUKUMAR P	TH
+A2+TA2+TAA2	PRPG	EZHILMARAN D	TH
+A2+TA2+TAA2	PRPG	ARUNA K	TH
+A2+TA2+TAA2	PRP	KARTHIKA K	TH
+A1+TA1+TAA1	PRP	YOGALAKSHMI T	TH
+A2+TA2+TAA2	PRP	GURUSAMY A	TH
+A1+TA1+TAA1	PRP	GAYATHRI R	TH
+A1+TA1+TAA1	PRP	ANIMESH ROY	TH
+A1+TA1+TAA1	PRP	SUJASREE M	TH
+A1+TA1+TAA1	PRP	PALLAVEE GUPTA	TH
+A1+TA1+TAA1	PRP	RAMESH KUMAR D	TH
+A2+TA2+TAA2	PRP	VALLAMPATI RAMACHANDRA PRASAD	TH
+A1+TA1+TAA1	PRP	DEBAROTI DAS	TH
+A2+TA2+TAA2	PRP	DHARANI S	TH
+A1+TA1+TAA1	PRPG	VIJAYA KUMAR A.G	TH
+A2+TA2+TAA2	PRP	RAJESH BHATT	TH
+A1+TA1+TAA1	PRPG	LAKSHMI NARAYAN MISHRA	TH
+A1+TA1+TAA1	PRP	MURUGAN V	TH
+A2+TA2+TAA2	PRP	DEBAROTI DAS	TH
+A2+TA2+TAA2	PRP	PADIGEPATI NAVEEN	TH
+A2+TA2+TAA2	PRP	MONICA C	TH
+A1+TA1+TAA1	PRP	CLEMENT J	TH
+A1+TA1+TAA1	PRP	RAMU GEDDAVALASA	TH
+A1+TA1+TAA1	PRP	CHANDRASEKAR A	TH
+A2+TA2+TAA2	PRPG	RACHNA BHATIA	TH
+A1+TA1+TAA1	PRP	PRIYA DAS	TH
+A2+TA2+TAA2	PRP	REENU RANI	TH
+A2+TA2+TAA2	PRP	ANIMESH ROY	TH
+A2+TA2+TAA2	PRPG	ARUN CHOUDHARY	TH
+A1+TA1+TAA1	PRPG	DURGA NAGARAJAN	TH
+A1+TA1+TAA1	PRPG	DEEPA G	TH
+`;
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const HOURS = ['8', '9', '10', '11', '12', '1', '2', '3', '4', '5', '6', '7'];
+const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#00b5b5', '#f032e6', '#9a6324', '#b8a000', '#808080', '#800000', '#6b8e00'];
+const UNITS = 68; // 10-minute columns from 08:00 to 19:20
+
+// Theory slots per day: 5 morning (08:00..12:00) and 5 evening (14:00..18:00), 50 min each
+const THEORY = {
+  am: [['A1','F1','D1','TB1','TG1'], ['B1','G1','E1','TC1','TAA1'], ['C1','A1','F1','',''], ['D1','B1','G1','TE1','TCC1'], ['E1','C1','TA1','TF1','TD1']],
+  pm: [['A2','F2','D2','TB2','TG2'], ['B2','G2','E2','TC2','TAA2'], ['C2','A2','F2','TD2','TBB2'], ['D2','B2','G2','TE2','TCC2'], ['E2','C2','TA2','TF2','TDD2']]
+};
+// Lab slots are 100 min: 08:00, 09:50, 11:40 and 14:00, 15:50, 17:40 (minutes from 08:00)
+const LAB_STARTS = [0, 110, 220];
+
+const CELLS = {};       // key -> { d, row, unit, span, label }   (row 0 = theory, 1 = lab)
+const SLOT_CELLS = {};  // slot name -> [cell keys]
+
+function addCell(d, row, startMin, lenMin, label, names) {
+  const key = `${d}_${row}_${startMin}`;
+  CELLS[key] = { d, row, unit: startMin / 10, span: lenMin / 10, label };
+  names.forEach(n => (SLOT_CELLS[n] = SLOT_CELLS[n] || []).push(key));
+}
+
+for (let d = 0; d < 5; d++) {
+  ['am', 'pm'].forEach((half, hi) => {
+    for (let i = 0; i < 5; i++) {
+      const name = THEORY[half][d][i];
+      if (name) addCell(d, 0, hi * 360 + i * 60, 50, name, [name]);
+    }
+    LAB_STARTS.forEach((s, k) => {
+      const n = hi * 30 + d * 6 + k * 2 + 1;
+      const lab = `L${n}+L${n + 1}`;
+      addCell(d, 1, hi * 360 + s, 100, lab, [lab, `L${n}`, `L${n + 1}`]);
+    });
+  });
+}
+
+let options = [];
+let courseColors = {};
+let filters = {}; // course -> selected option id
+let deleted = new Set(); // ids of options removed with right-click (shown in the bin)
+
+function cellKeys(combo) {
+  const keys = new Set(), unk = [];
+  const t = combo.split('+').map(s => s.trim()).filter(Boolean);
+  for (let i = 0; i < t.length; i++) {
+    const pair = t[i] + '+' + t[i + 1];
+    if (i < t.length - 1 && SLOT_CELLS[pair]) {
+      SLOT_CELLS[pair].forEach(k => keys.add(k));
+      i++;
+    } else if (SLOT_CELLS[t[i]]) {
+      SLOT_CELLS[t[i]].forEach(k => keys.add(k));
+    } else if (t[i].toUpperCase() !== 'NIL') {
+      unk.push(t[i]);
+    }
+  }
+  return { cells: [...keys], unk };
+}
+
+function parse(text) {
+  const out = [];
+  const count = {}; // options are numbered 1, 2, 3... within their course
+  text.split(/\n#\s+/).forEach((block, b) => {
+    if (!block.trim()) return;
+    const lines = block.trim().split('\n');
+    const course = lines[0].replace(/^#\s*/, '').trim();
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line || line.startsWith('Slot Detail') || line.startsWith('Slot Combination')) continue;
+      const p = line.split('\t').map(s => s.trim());
+      if (p.length >= 3) {
+        const { cells, unk } = cellKeys(p[0]);
+        count[course] = (count[course] || 0) + 1;
+        out.push({ id: `o${b}_${i}`, n: count[course], course, combo: p[0], venue: p[1], faculty: p[2], cells, unk });
+      }
+    }
+  });
+  return out;
+}
+
+// grid dot: click = filter to this option, right-click = delete it
+// bin dot:  click or right-click = bring it back
+function makeDot(o, binned) {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (!binned && filters[o.course] ? ' picked' : '');
+  dot.dataset.id = o.id;
+  dot.textContent = o.n;
+  dot.style.background = courseColors[o.course];
+  dot.onmouseenter = e => hoverOn(e, o);
+  dot.onmousemove = moveTip;
+  dot.onmouseleave = hoverOff;
+  dot.onclick = () => binned ? restoreOpt(o) : toggle(o);
+  dot.oncontextmenu = e => { e.preventDefault(); binned ? restoreOpt(o) : removeOpt(o); };
+  return dot;
+}
+
+function slotTd(key, byCell) {
+  const c = CELLS[key];
+  const td = document.createElement('td');
+  td.colSpan = c.span;
+
+  const lbl = document.createElement('div');
+  lbl.className = 'lbl';
+  lbl.textContent = c.label;
+
+  const dots = document.createElement('div');
+  dots.className = 'dots';
+  (byCell[key] || []).forEach(o => dots.appendChild(makeDot(o, false)));
+  const wrap = document.createElement('div');
+  wrap.className = 'in';
+  wrap.append(lbl, dots);
+  td.appendChild(wrap);
+  return td;
+}
+
+function emptyTd(span) {
+  const td = document.createElement('td');
+  td.colSpan = span;
+  return td;
+}
+
+// one row of a day: cells in time order, empty cells fill the gaps up to 19:20
+function buildRow(d, row, byCell) {
+  const tr = document.createElement('tr');
+  if (row === 1) tr.className = 'lab';
+  if (row === 0) {
+    const th = document.createElement('th');
+    th.rowSpan = 2;
+    th.textContent = DAYS[d];
+    tr.appendChild(th);
+  }
+  const keys = Object.keys(CELLS).filter(k => CELLS[k].d === d && CELLS[k].row === row)
+    .sort((a, b) => CELLS[a].unit - CELLS[b].unit);
+  let pos = 0;
+  keys.forEach(k => {
+    const c = CELLS[k];
+    if (c.unit > pos) tr.appendChild(emptyTd(c.unit - pos));
+    tr.appendChild(slotTd(k, byCell));
+    pos = c.unit + c.span;
+  });
+  if (pos < UNITS) tr.appendChild(emptyTd(UNITS - pos));
+  return tr;
+}
+
+function renderHeader() {
+  const cols = document.getElementById('cols');
+  cols.innerHTML = '<col style="width:30px">' + '<col>'.repeat(UNITS);
+  const head = document.getElementById('head');
+  head.innerHTML = '';
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<th>Day</th>' + HOURS.map((h, i) => `<th colspan="${i === 11 ? 2 : 6}">${h}</th>`).join('');
+  head.appendChild(tr);
+}
+
+function render() {
+  // only the selected option is shown for a course that has one selected
+  const byCell = {};
+  options.forEach(o => {
+    if (deleted.has(o.id)) return;
+    const sel = filters[o.course];
+    if (sel && sel !== o.id) return;
+    o.cells.forEach(k => (byCell[k] = byCell[k] || []).push(o));
+  });
+
+  const body = document.getElementById('gridBody');
+  body.innerHTML = '';
+  DAYS.forEach((day, d) => {
+    body.appendChild(buildRow(d, 0, byCell));
+    body.appendChild(buildRow(d, 1, byCell));
+  });
+
+  document.getElementById('legend').innerHTML = Object.keys(courseColors)
+    .map(c => `<span><i style="background:${courseColors[c]}"></i>${c}</span>`).join('');
+  const bin = document.getElementById('bin');
+  bin.innerHTML = '';
+  if (deleted.size) {
+    bin.append('Bin: ');
+    options.filter(o => deleted.has(o.id)).forEach(o => bin.appendChild(makeDot(o, true)));
+  }
+  document.getElementById('resetBtn').style.display = Object.keys(filters).length ? '' : 'none';
+
+  const unmapped = [...new Set(options.filter(o => o.unk.length).map(o => `${o.unk.join(', ')} (${o.course})`))];
+  document.getElementById('warn').textContent = unmapped.length ? 'Unmapped slots: ' + unmapped.join('; ') : '';
+}
+
+function hoverOn(e, o) {
+  const tt = document.getElementById('tooltip');
+  tt.innerHTML = `<b>${o.course}</b> (option ${o.n})<br>Prof: ${o.faculty}<br>Slot: ${o.combo}<br>Venue: ${o.venue}`;
+  tt.style.display = 'block';
+  moveTip(e);
+  document.querySelectorAll(`.dot[data-id="${o.id}"]`).forEach(x => x.classList.add('hl'));
+}
+
+// follow the cursor, flipping to the other side of it when the tooltip would leave the screen
+function moveTip(e) {
+  const tt = document.getElementById('tooltip');
+  const w = tt.offsetWidth, h = tt.offsetHeight;
+  let x = e.clientX + 12, y = e.clientY + 12;
+  if (x + w > window.innerWidth) x = e.clientX - w - 12;
+  if (y + h > window.innerHeight) y = e.clientY - h - 12;
+  tt.style.left = Math.max(0, x) + 'px';
+  tt.style.top = Math.max(0, y) + 'px';
+}
+
+function hoverOff() {
+  document.getElementById('tooltip').style.display = 'none';
+  document.querySelectorAll('.dot.hl').forEach(x => x.classList.remove('hl'));
+}
+
+function removeOpt(o) {
+  deleted.add(o.id);
+  if (filters[o.course] === o.id) delete filters[o.course];
+  hoverOff();
+  render();
+}
+
+function restoreOpt(o) {
+  deleted.delete(o.id);
+  hoverOff();
+  render();
+}
+
+function toggle(o) {
+  if (filters[o.course] === o.id) delete filters[o.course];
+  else filters[o.course] = o.id;
+  hoverOff();
+  render();
+}
+
+function init(text) {
+  options = parse(text);
+  filters = {};
+  deleted = new Set();
+  courseColors = {};
+  [...new Set(options.map(o => o.course))].forEach((c, i) =>
+    courseColors[c] = i < COLORS.length ? COLORS[i] : `hsl(${(i * 137.5) % 360}, 70%, 40%)`);
+  render();
+}
+
+document.getElementById('rawInput').value = DEFAULT_DATA;
+document.getElementById('applyBtn').onclick = () => init(document.getElementById('rawInput').value);
+document.getElementById('resetBtn').onclick = () => { filters = {}; render(); };
+renderHeader();
+init(DEFAULT_DATA);
+</script>
+</body>
+</html>
