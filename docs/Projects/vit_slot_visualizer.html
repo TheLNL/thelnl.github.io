@@ -26,11 +26,14 @@
   #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; }
   textarea { width: 100%; box-sizing: border-box; }
   #manual:not(:empty) { border: 1px solid #999; background: #f4f4f4; padding: 6px; margin: 4px 0; }
+  #disclaimer { background: #eef4fb; color: #1f3a5f; border: 1px solid #c5d8ee; padding: 3px 6px; margin: 0 0 4px; }
   #manual div { margin: 3px 0; }
   #warn:not(:empty) { white-space: pre-wrap; background: #fff3cd; color: #842029; border: 1px solid #e0a800; border-left: 4px solid #d9534f; padding: 4px 6px; margin: 4px 0; }
 </style>
 </head>
 <body>
+
+<div id="disclaimer">Note: this tool is still being tested and may have small bugs, so please double-check your slots and venues against the official timetable.</div>
 
 <button id="resetBtn">Reset filter</button>
 <details>
@@ -50,6 +53,7 @@
 <div id="legend"></div>
 <div id="bin"></div>
 <div id="warn"></div>
+<div id="recon"></div>
 <button id="groupBtn" style="display:none">Group manually</button>
 <div id="manual"></div>
 <div id="tooltip"></div>
@@ -656,12 +660,16 @@ function cellKeys(combo) {
   return { cells: [...keys], unk };
 }
 
+// ground-floor venue prefixes that count as the same building (edit if your venues differ)
+const GROUND_FLOOR = { PRPG: 'PRP', SJTG: 'SJT' };
+
 // building part of a venue string like "PRPG17" -> "PRPG", "TT116" -> "TT"
 function venueBlock(v) {
   if (!v || v === 'N/A' || v === 'NIL') return 'N/A';
   const m = v.trim().match(/^([A-Za-z]+)/);
-  // PRPG / SJTG are the ground floors of PRP / SJT
-  return m ? m[1].toUpperCase().replace(/^(PRP|SJT)G$/, '$1') : v;
+  if (!m) return v;
+  const b = m[1].toUpperCase();
+  return GROUND_FLOOR[b] || b;
 }
 
 // raw rows [slot, venue, faculty, type] (theory and lab on separate lines) ->
@@ -671,11 +679,11 @@ function venueBlock(v) {
 // can't be known: all of them are put into ONE option and reported in ambiguousGroups.
 function combineRows(rows, course) {
   const theory = [], labs = [], oc = [];
-  rows.forEach(([slot, venue, faculty, type]) => {
-    const r = { slot, venue, faculty, type };
+  rows.forEach(([slot, venue, faculty, type, id]) => {
+    const r = { slot, venue, faculty, type, id };
     if (type === 'ETH' || type === 'TH') theory.push(r);
     else if (type === 'ELA') labs.push(r);
-    else oc.push(r);
+    else oc.push(r); // LO (lab-only) and OC rows stand alone: never paired with theory
   });
 
   const half = s => s.split('+')[0].includes('1') ? 'am' : 'pm';
@@ -695,10 +703,13 @@ function combineRows(rows, course) {
     if (done.has(key)) return;
     const facLabs = labs.filter(l => l.faculty === fac);
     if (!facLabs.length) {
-      out.push([th.slot, venueBlock(th.venue), fac, th.type]);
+      out.push([th.slot, venueBlock(th.venue), fac, th.type, [th.id]]);
       return;
     }
     const sameHalf = theory.filter(t => t.faculty === fac && half(t.slot) === h);
+    const allTh = theory.filter(t => t.faculty === fac);
+    if (allTh.length === 1 && facLabs.length === 1 && labHalf(facLabs[0].slot) === h)
+      ruleConflicts.push(`${course}: ${fac} (${th.slot} with ${facLabs[0].slot})`);
     let cand = facLabs.filter(l => labHalf(l.slot) && labHalf(l.slot) !== h);
     if (!cand.length) cand = facLabs;
     const man = manualPairs[course + '|' + key];
@@ -706,24 +717,28 @@ function combineRows(rows, course) {
       done.add(key);
       sameHalf.forEach((t, i) => {
         const l = cand.find(x => x.slot === man[i]);
-        if (!l) return;
+        if (!l) {
+          inputWarnings.push(`${course}: manual grouping for ${fac} refers to lab "${man[i]}" which no longer exists; ${t.slot} is shown without a lab`);
+          out.push([t.slot, venueBlock(t.venue), fac, t.type, [t.id]]);
+          return;
+        }
         used.add(l);
-        out.push([`${t.slot} + ${l.slot}`, venueOf([t, l]), fac, typeOf(t.type)]);
+        out.push([`${t.slot} + ${l.slot}`, venueOf([t, l]), fac, typeOf(t.type), [t.id, l.id]]);
       });
       return;
     }
     cand.forEach(l => used.add(l));
     if (sameHalf.length === 1 && cand.length === 1) {
-      out.push([`${th.slot} + ${cand[0].slot}`, venueOf([th, cand[0]]), fac, typeOf(th.type)]);
+      out.push([`${th.slot} + ${cand[0].slot}`, venueOf([th, cand[0]]), fac, typeOf(th.type), [th.id, cand[0].id]]);
     } else {
       done.add(key);
       const ts = sameHalf.map(t => t.slot), ls = cand.map(l => l.slot);
-      out.push([[...ts, ...ls].join(' + '), venueOf([...sameHalf, ...cand]), fac, typeOf(th.type)]);
+      out.push([[...ts, ...ls].join(' + '), venueOf([...sameHalf, ...cand]), fac, typeOf(th.type), [...sameHalf.map(t => t.id), ...cand.map(l => l.id)]]);
       ambiguousGroups.push({ course, key, fac, theory: sameHalf, labs: cand, text: `${fac} (${ts.join(', ')} with ${ls.join(', ')})` });
     }
   });
-  oc.forEach(o => out.push([o.slot, venueBlock(o.venue), o.faculty, o.type]));
-  labs.forEach(l => { if (!used.has(l)) droppedLabs.push(`${course}: ${l.faculty} ${l.slot} (${l.venue})`); });
+  oc.forEach(o => out.push([o.slot, venueBlock(o.venue), o.faculty, o.type, [o.id]]));
+  labs.forEach(l => { if (!used.has(l)) { droppedLabs.push(`${course}: ${l.faculty} ${l.slot} (${l.venue})`); droppedIds.push(l.id); } });
   return out;
 }
 
@@ -733,10 +748,21 @@ let droppedLabs = []; // lab rows that did not end up in any option
 let ambiguousGroups = []; // professors whose theory/lab pairing can't be decided
 let manualPairs = {};     // 'course|faculty|half' -> lab slot chosen for each theory row, set with the Group manually panel
 let currentText = '';
+let rowSeq = 0, allIds = new Set(), droppedIds = []; // every input row gets an id so we can prove each one ends up somewhere
+let recon = { read: 0, placed: 0, missing: [] };
+let ruleConflicts = []; // professors whose only theory and lab are in the same half of the day
+let skippedLines = []; // input lines with fewer than 3 tab-separated columns
+let inputWarnings = []; // any other problem found in the input
 
 function parse(text) {
   droppedLabs = [];
   ambiguousGroups = [];
+  skippedLines = [];
+  rowSeq = 0; allIds = new Set(); droppedIds = [];
+  ruleConflicts = [];
+  inputWarnings = [];
+  if (!text.trim()) inputWarnings.push('no data was entered');
+  else if (!/^#\s/.test(text.trimStart())) inputWarnings.push('input does not start with a "# Course name" header; its first line was used as the course name');
   const out = [];
   const count = {}; // options are numbered 1, 2, 3... within their course
   text.split(/\n#\s+/).forEach((block, b) => {
@@ -745,21 +771,48 @@ function parse(text) {
     const course = lines[0].replace(/^#\s*/, '').trim();
     let combined = false;
     let rows = [];
+    const bad = msg => inputWarnings.push(`${course || '(no course name)'}: ${msg}`);
+    if (!course) bad('course header has no name');
+    const seen = new Set();
     for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
+      const rawLine = lines[i].replace(/\r$/, ''); // keep leading/trailing tabs so empty columns stay visible
+      const line = rawLine.trim();
       if (!line) continue;
       if (line.startsWith('Slot Combination')) { combined = true; continue; }
       if (line.startsWith('Slot Detail')) continue;
-      const p = line.split('\t').map(s => s.trim());
-      if (p.length >= 3) rows.push([p[0], p[1], p[2], p[3] || '']);
+      const p = rawLine.split('\t').map(s => s.trim());
+      if (p.length < 3) { skippedLines.push(`${course}: ${line}`); continue; }
+      if (seen.has(p.join('\t'))) bad(`duplicate row "${p.join(' | ')}"`);
+      seen.add(p.join('\t'));
+      if (p.length > 4) bad(`extra columns ignored in "${line}"`);
+      if (!p[0]) bad(`missing slot in "${line}"`);
+      if (!p[1]) bad(`missing venue in "${line}"`);
+      if (!p[2]) bad(`missing faculty in "${line}"`);
+      allIds.add(rowSeq);
+      rows.push([p[0], p[1], p[2], p[3] || '', rowSeq++]);
     }
+    if (!rows.length) bad('no data rows');
+    if (!combined) rows.forEach(r => {
+      const [slot, , , type] = r;
+      if (!type) bad(`missing course type in "${r.join(' | ')}"`);
+      else if (!['ETH', 'TH', 'ELA', 'LO', 'OC'].includes(type)) bad(`unknown course type "${type}" in "${r.join(' | ')}"`);
+      if ((type === 'ETH' || type === 'TH') && !/[12]/.test(slot.split('+')[0])) bad(`can't tell morning/afternoon from theory slot "${slot}"`);
+      if ((type === 'ELA' || type === 'LO') && !/L\d+/.test(slot)) bad(`lab slot "${slot}" is not of the form L<number>`);
+    });
     if (!combined) rows = combineRows(rows, course);
+    else rows = rows.map(r => [r[0], r[1], r[2], r[3], [r[4]]]);
     rows.forEach((p, i) => {
       const { cells, unk } = cellKeys(p[0]);
       count[course] = (count[course] || 0) + 1;
-      out.push({ id: `o${b}_${i}`, n: count[course], course, combo: p[0], venue: p[1], faculty: p[2], cells, unk });
+      out.push({ id: `o${b}_${i}`, n: count[course], course, combo: p[0], venue: p[1], faculty: p[2], cells, unk, src: p[4] });
     });
   });
+  // proof that nothing is lost: every input row must be inside an option or reported as an unused lab
+  const covered = new Set(droppedIds);
+  out.forEach(o => o.src.forEach(id => covered.add(id)));
+  const missing = [...allIds].filter(id => !covered.has(id));
+  recon = { read: allIds.size + skippedLines.length, placed: covered.size, missing };
+  if (missing.length) inputWarnings.push(`INTERNAL CHECK FAILED: ${missing.length} input row(s) are not shown in any option and not reported anywhere else`);
   return out;
 }
 
@@ -878,8 +931,19 @@ function render() {
   const byCourse = {};
   ambiguousGroups.forEach(a => (byCourse[a.course] = byCourse[a.course] || []).push(a.text));
   Object.keys(byCourse).forEach(c => warn.push(`${c}: grouping can't be done properly for this course, assign manually. These are grouped together as one option each: ` + byCourse[c].join('; ')));
+  if (inputWarnings.length) warn.push(`${inputWarnings.length} input problem(s): ` + inputWarnings.slice(0, 20).join('; ') + (inputWarnings.length > 20 ? `; ...and ${inputWarnings.length - 20} more` : ''));
+  if (ruleConflicts.length) warn.push(`${ruleConflicts.length} professor(s) have their only theory and lab in the same half of the day, which contradicts the assumed rule (morning theory goes with afternoon lab, and the reverse). Pairing of professors with several theory/lab rows may be wrong: ` + ruleConflicts.slice(0, 20).join('; '));
+  if (skippedLines.length) warn.push(`${skippedLines.length} input line(s) skipped (need at least 3 tab-separated columns): ` + skippedLines.join('; '));
   if (droppedLabs.length) warn.push(`${droppedLabs.length} lab rows not used (one lab is paired per theory row, or the professor has no theory row): ` + droppedLabs.join('; '));
   document.getElementById('warn').textContent = warn.join('\n');
+  let shown = 0;
+  options.forEach(o => { if (!deleted.has(o.id) && !(filters[o.course] && filters[o.course] !== o.id)) shown++; });
+  const rc = document.getElementById('recon');
+  rc.style.color = recon.missing.length ? '#b00' : '#555';
+  rc.textContent = `Input check: ${recon.read} rows read -> ${recon.placed} placed in ${options.length} options` +
+    `, ${droppedIds.length} unused labs and ${skippedLines.length} skipped lines (both warned above)` +
+    (recon.missing.length ? ` -- ${recon.missing.length} ROWS MISSING` : ' -- all rows accounted for') +
+    `. Showing ${shown} of ${options.length} options (${deleted.size} in bin, ${options.length - deleted.size - shown} hidden by course filter).`;
   document.getElementById('groupBtn').style.display = (ambiguousGroups.length || Object.keys(manualPairs).length) ? '' : 'none';
 }
 
@@ -927,8 +991,13 @@ function toggle(o) {
   render();
 }
 
+function showError(err) {
+  inputWarnings = [`could not process the input (${err && err.message ? err.message : err})`];
+  droppedLabs = []; ambiguousGroups = []; skippedLines = [];
+}
+
 function reparse() {
-  options = parse(currentText);
+  try { options = parse(currentText); } catch (err) { options = []; showError(err); }
   filters = {};
   deleted = new Set();
   document.getElementById('manual').innerHTML = '';
@@ -976,13 +1045,13 @@ function toggleManual() {
     box.appendChild(clr);
   }
   if (!box.innerHTML) { box.textContent = 'Nothing to group manually.'; }
-  box.scrollIntoView({ block: 'nearest' });
+  if (box.scrollIntoView) box.scrollIntoView({ block: 'nearest' });
 }
 
 function init(text) {
   currentText = text;
   manualPairs = {};
-  options = parse(text);
+  try { options = parse(text); } catch (err) { options = []; showError(err); }
   filters = {};
   deleted = new Set();
   courseColors = {};
@@ -995,6 +1064,9 @@ document.getElementById('rawInput').value = DEFAULT_DATA;
 document.getElementById('applyBtn').onclick = () => init(document.getElementById('rawInput').value);
 document.getElementById('groupBtn').addEventListener('click', toggleManual);
 document.getElementById('resetBtn').onclick = () => { filters = {}; render(); };
+window.addEventListener('error', e => {
+  document.getElementById('warn').textContent += '\nScript error: ' + e.message;
+});
 renderHeader();
 init(DEFAULT_DATA);
 </script>
