@@ -643,6 +643,7 @@ for (let d = 0; d < 5; d++) {
   });
 }
 
+let clashIds = new Set(); // options with at least one slot blocked by a locked course (all their dots get marked)
 let blockMap = {}; // cell key -> [{ o: locked option, direct: true if it is one of the option's own cells }]
 
 function cellsOverlap(a, b) {
@@ -886,7 +887,7 @@ function slotTd(key, byCell) {
   const bl = blockMap[key];
   (byCell[key] || []).forEach(o => {
     const dot = makeDot(o, false);
-    if (bl && bl.some(b => b.o.course !== o.course)) dot.classList.add('clash');
+    if (clashIds.has(o.id)) dot.classList.add('clash');
     dots.appendChild(dot);
   });
   if (bl) {
@@ -958,6 +959,7 @@ function render() {
 
   const locked = options.filter(o => !deleted.has(o.id) && filters[o.course] === o.id);
   blockMap = computeBlocks(locked);
+  clashIds = new Set(options.filter(o => o.cells.some(k => (blockMap[k] || []).some(b => b.o.course !== o.course))).map(o => o.id));
   const clashes = findClashes(locked);
   document.getElementById('clash').textContent = clashes.length ? 'Clash between locked courses:\n' + clashes.join('\n') : '';
   document.getElementById('lockinfo').textContent = locked.length
