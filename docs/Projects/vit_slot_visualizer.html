@@ -27,6 +27,9 @@
   textarea { width: 100%; box-sizing: border-box; }
   #manual:not(:empty) { border: 1px solid #999; background: #f4f4f4; padding: 6px; margin: 4px 0; }
   #disclaimer { background: #eef4fb; color: #1f3a5f; border: 1px solid #c5d8ee; padding: 3px 6px; margin: 0 0 4px; }
+  .dot.clash { opacity: .45; outline: 1px dashed #c00; outline-offset: 1px; }
+  #lockinfo:not(:empty) { margin: 4px 0; color: #444; }
+  #clash:not(:empty) { background: #f8d7da; color: #842029; border: 1px solid #d9534f; border-left: 4px solid #d9534f; padding: 4px 6px; margin: 4px 0; white-space: pre-wrap; }
   #manual div { margin: 3px 0; }
   #warn:not(:empty) { white-space: pre-wrap; background: #fff3cd; color: #842029; border: 1px solid #e0a800; border-left: 4px solid #d9534f; padding: 4px 6px; margin: 4px 0; }
 </style>
@@ -52,6 +55,8 @@
 
 <div id="legend"></div>
 <div id="bin"></div>
+<div id="lockinfo"></div>
+<div id="clash"></div>
 <div id="warn"></div>
 <div id="recon"></div>
 <button id="groupBtn" style="display:none">Group manually</button>
@@ -551,7 +556,7 @@ L25+L26 	SJTG18 	KRITHIKA L.B 	ELA
 B2+TB2 	PRP116 	VIJAYA KUMAR K 	ETH
 L7+L8 	PRP118a 	VIJAYA KUMAR K 	ELA
 L11+L12 	PRP232 	THIRUNAVUKKARASAN M 	ELA
-B1+TB1 	PRP112 	SIVAKUMAR. N 	ETH
+B1+TB1 	PRP112 	SIVAKUMAR. N 	ETH 
 
 # Discreet Math and Linear Algebra
 Slot Detail 	Venue 	Faculty 	Course Type
@@ -636,6 +641,41 @@ for (let d = 0; d < 5; d++) {
       addCell(d, 1, hi * 360 + s, 100, lab, [lab, `L${n}`, `L${n + 1}`]);
     });
   });
+}
+
+let blockMap = {}; // cell key -> [{ o: locked option, direct: true if it is one of the option's own cells }]
+
+function cellsOverlap(a, b) {
+  const x = CELLS[a], y = CELLS[b];
+  return x.d === y.d && x.unit < y.unit + y.span && y.unit < x.unit + x.span;
+}
+
+function cellTime(k) {
+  const c = CELLS[k], m = 480 + c.unit * 10;
+  return `${DAYS[c.d]} ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} (${c.label})`;
+}
+
+// every cell a locked option occupies or overlaps in time (a theory slot blocks the lab slots running over it and vice versa)
+function computeBlocks(locked) {
+  const map = {};
+  locked.forEach(o => {
+    o.cells.forEach(k => (map[k] = map[k] || []).push({ o, direct: true }));
+    Object.keys(CELLS).forEach(j => {
+      if (!o.cells.includes(j) && o.cells.some(k => cellsOverlap(k, j))) (map[j] = map[j] || []).push({ o, direct: false });
+    });
+  });
+  return map;
+}
+
+// clashes between two locked options of different courses
+function findClashes(locked) {
+  const out = [];
+  for (let i = 0; i < locked.length; i++) for (let j = i + 1; j < locked.length; j++) {
+    const a = locked[i], b = locked[j], hits = [];
+    a.cells.forEach(x => b.cells.forEach(y => { if (x === y || cellsOverlap(x, y)) hits.push(x === y ? cellTime(x) : `${cellTime(x)} overlaps ${cellTime(y)}`); }));
+    if (hits.length) out.push(`${a.course} (option ${a.n}) clashes with ${b.course} (option ${b.n}): ${[...new Set(hits)].join('; ')}`);
+  }
+  return out;
 }
 
 let options = [];
@@ -843,7 +883,21 @@ function slotTd(key, byCell) {
 
   const dots = document.createElement('div');
   dots.className = 'dots';
-  (byCell[key] || []).forEach(o => dots.appendChild(makeDot(o, false)));
+  const bl = blockMap[key];
+  (byCell[key] || []).forEach(o => {
+    const dot = makeDot(o, false);
+    if (bl && bl.some(b => b.o.course !== o.course)) dot.classList.add('clash');
+    dots.appendChild(dot);
+  });
+  if (bl) {
+    const directCourses = bl.filter(b => b.direct).map(b => b.o.course);
+    const clashing = bl.some(b => directCourses.some(c => c !== b.o.course));
+    const col = courseColors[bl[0].o.course];
+    td.style.background = clashing ? '#f5b5b5'
+      : bl[0].direct ? `color-mix(in srgb, ${col} 22%, white)`
+      : `repeating-linear-gradient(45deg, color-mix(in srgb, ${col} 22%, white) 0 4px, transparent 4px 8px)`;
+    td.title = (clashing ? 'CLASH: ' : 'Blocked by ') + [...new Set(bl.map(b => b.o.course))].join(' + ');
+  }
   const wrap = document.createElement('div');
   wrap.className = 'in';
   wrap.append(lbl, dots);
@@ -901,6 +955,14 @@ function render() {
     if (!o.cells.length) noTiming.push(o);
     o.cells.forEach(k => (byCell[k] = byCell[k] || []).push(o));
   });
+
+  const locked = options.filter(o => !deleted.has(o.id) && filters[o.course] === o.id);
+  blockMap = computeBlocks(locked);
+  const clashes = findClashes(locked);
+  document.getElementById('clash').textContent = clashes.length ? 'Clash between locked courses:\n' + clashes.join('\n') : '';
+  document.getElementById('lockinfo').textContent = locked.length
+    ? `Locked: ${locked.map(o => `${o.course} (option ${o.n})`).join(', ')}. Shaded = slots used by a locked course, hatched = slots overlapping in time, red = clash, faded dots with a dashed outline = options that clash with a locked course.`
+    : '';
 
   const body = document.getElementById('gridBody');
   body.innerHTML = '';
